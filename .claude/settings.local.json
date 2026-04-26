@@ -1,7 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "PowerShell(Start-Process powershell -ArgumentList '-NoExit', '-Command', 'cd \"c:\\\\Users\\\\manoj\\\\OneDrive\\\\Desktop\\\\DC Website\\\\voicechat-frontend\"; npm run dev')"
-    ]
-  }
-}
