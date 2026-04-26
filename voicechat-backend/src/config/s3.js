@@ -18,10 +18,6 @@ export const s3Client = new S3Client({
     accessKeyId: process.env.AWS_ACCESS_KEY_ID || "",
     secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || "",
   },
-  ...(process.env.S3_ENDPOINT ? {
-    endpoint: process.env.S3_ENDPOINT,
-    forcePathStyle: true,
-  } : {}),
 });
 
 export const BUCKET_NAME = process.env.S3_BUCKET_NAME || "";

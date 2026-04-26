@@ -120,7 +120,7 @@ export default function AdminQA() {
         }
     }
 
-    async function actOnRecording(callId, userId, action, side) {
+    async function actOnRecording(callId, userId, action) {
         const result = await Swal.fire({
             title: action === 'approve' ? 'Approve Recording?' : 'Reject Recording?',
             text: `Are you sure you want to ${action} this recording?`,
@@ -134,7 +134,7 @@ export default function AdminQA() {
         if (!result.isConfirmed) return;
 
         setActionLoading(`${action}_${userId}`);
-        const note = recordingNotes[side] || "";
+        const note = recordingNotes[userId] || "";
         try {
             const data = await apiPatch(`/api/admin/qa/calls/${callId}/${action}/${userId}`, { note: note.trim() });
             if (reviewing?.callId === callId && data.call) {
@@ -310,8 +310,8 @@ export default function AdminQA() {
                                                             setReviewing(call);
                                                             setNotes(call.reviewNotes || "");
                                                             setRecordingNotes({
-                                                                A: call.recordingAReviewNote || "",
-                                                                B: call.recordingBReviewNote || "",
+                                                                [call.userA?._id]: call.recordingAReviewNote || "",
+                                                                [call.userB?._id]: call.recordingBReviewNote || ""
                                                             });
                                                         }}
                                                         className="px-3 py-1.5 bg-warning-600 hover:bg-warning-700 text-white text-xs font-semibold rounded-lg"
@@ -391,8 +391,8 @@ export default function AdminQA() {
                                             <label className="block text-[10px] text-neutral-500 mb-1 uppercase font-bold">Review Note</label>
                                             <textarea
                                                 rows={2}
-                                                value={recordingNotes[side] || ""}
-                                                onChange={(e) => setRecordingNotes(prev => ({ ...prev, [side]: e.target.value }))}
+                                                value={recordingNotes[user._id] || ""}
+                                                onChange={(e) => setRecordingNotes(prev => ({ ...prev, [user._id]: e.target.value }))}
                                                 placeholder="Enter review notes..."
                                                 className="w-full bg-neutral-800 border border-neutral-600 text-white text-xs rounded-lg px-2 py-1.5 resize-none focus:border-warning-500 outline-none"
                                             />
@@ -420,10 +420,10 @@ export default function AdminQA() {
                                             )
                                         ) : <div className="text-xs text-neutral-500 text-center py-2">No recording available</div>}
                                         <div className="flex gap-2">
-                                            <button onClick={() => actOnRecording(reviewing.callId, user._id, "approve", side)} disabled={!!actionLoading} className="flex-1 py-2 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold rounded-lg disabled:opacity-50">
+                                            <button onClick={() => actOnRecording(reviewing.callId, user._id, "approve")} disabled={!!actionLoading} className="flex-1 py-2 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold rounded-lg disabled:opacity-50">
                                                 {actionLoading === `approve_${user._id}` ? "Saving..." : "Approve"}
                                             </button>
-                                            <button onClick={() => actOnRecording(reviewing.callId, user._id, "reject", side)} disabled={!!actionLoading} className="flex-1 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold rounded-lg disabled:opacity-50">
+                                            <button onClick={() => actOnRecording(reviewing.callId, user._id, "reject")} disabled={!!actionLoading} className="flex-1 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold rounded-lg disabled:opacity-50">
                                                 {actionLoading === `reject_${user._id}` ? "Saving..." : "Reject"}
                                             </button>
                                         </div>

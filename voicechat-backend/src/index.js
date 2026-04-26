@@ -9,7 +9,7 @@ import cookieParser from "cookie-parser";
 import multer from "multer";
 import multerS3 from "multer-s3";
 import helmet from "helmet";
-import rateLimit, { ipKeyGenerator } from "express-rate-limit";
+import rateLimit from "express-rate-limit";
 import { s3Client, BUCKET_NAME } from "./config/s3.js";
 import { Upload } from "@aws-sdk/lib-storage";
 import { GetObjectCommand } from "@aws-sdk/client-s3";
@@ -114,12 +114,13 @@ const authLimiter = rateLimit({
   message: { error: "Security Lockout: Wait 15 minutes before sending another OTP for this email." },
   keyGenerator: (req) => {
     // Isolate limit strictly to the specific email being requested bypassing NGINX proxy masking
-    return req.body?.email || ipKeyGenerator(req);
+    return req.body?.email || req.ip; 
   }
 });
 app.use("/api/", globalLimiter); // Protect generic /api hooks
 
-app.use(express.json({ limit: "1mb" }));
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ limit: "50mb", extended: true }));
 app.use(cookieParser());
 app.use(
   cors({
