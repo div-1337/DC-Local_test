@@ -86,6 +86,7 @@ export default function PhraseRecording() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, sampleRate: 48000, channelCount: 1 } });
       resetRecording();
+      setError(null);
       
       const audioCtx = new AudioContext({ sampleRate: 48000 });
       await audioCtx.audioWorklet.addModule("/pcm-worklet.js");
@@ -171,17 +172,21 @@ export default function PhraseRecording() {
       const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:3001";
       const res = await fetch(BACKEND_URL + '/api/phrases/record', {
         method: 'POST',
-        credentials: 'include', // THIS is absolutely required to pass the HTTPOnly auth cookies payload!
+        credentials: 'include',
         body: formData
       });
 
-      if (!res.ok) throw new Error('Failed to upload');
-      
+      if (!res.ok) {
+        let errMsg = 'Upload failed';
+        try { const body = await res.json(); errMsg = body.error || errMsg; } catch {}
+        throw new Error(errMsg);
+      }
+
       resetRecording();
       await fetchStats();
-      await fetchNextPhrase(); // Auto-cycle to the next phrase
+      await fetchNextPhrase();
     } catch (err) {
-      alert('Upload failed. Check your network or the current phrase might have been claimed.');
+      setError(err.message || 'Upload failed. Please try again.');
       console.error(err);
     } finally {
       setLoading(false);
@@ -356,7 +361,8 @@ export default function PhraseRecording() {
                         <audio src={audioUrl} controls controlsList="nodownload noplaybackrate" onContextMenu={(e) => e.preventDefault()} className="w-full h-12" />
                       </div>
 
-                      <button 
+                      {error && <p className="text-error-500 text-sm mb-2">{error}</p>}
+                      <button
                         onClick={submitRecording}
                         disabled={loading}
                         className="w-full btn btn-primary flex items-center justify-center gap-2 py-4 text-lg"

@@ -44,6 +44,13 @@ async function createAdminUser() {
             email: adminEmail,
             passwordHash,
             isAdmin: true,
+            dob: new Date("1990-01-01"),
+            gender: "male",
+            regionalLanguage: "Hindi",
+            locality: "urban",
+            address: { street: "Admin St", city: "Delhi", state: "Delhi", pincode: "110001" },
+            microphoneBrand: "Admin",
+            microphoneModel: "Admin",
         });
 
         console.log("\n✅ Admin user created successfully!");

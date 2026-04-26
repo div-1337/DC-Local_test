@@ -35,24 +35,19 @@ export async function uploadPhrases(req, res) {
       );
     }
 
-    let inserted = 0;
-    let updated = 0;
-
+    // Build all docs first
+    const docs = [];
     for (const p of phrases) {
-      // Flexibly map the phrase ID or auto-generate one
       const givenId = p.id || p.phraseId || p._id || p.phrase_id || `auto_${Date.now()}_${Math.random().toString(36).substring(2,7)}`;
-      
-      // Flexibly map the text content
       const text = p.text || p.sentence || p.content || p.phrase || p.transcript;
-      if (!text) continue; // We strictly need at least some text to be read
-
-      const existing = await Phrase.findOne({ phraseId: String(givenId) });
-      const doc = {
+      if (!text) continue;
+      docs.push({
+        phraseId: String(givenId),
         companyId: companyId || null,
         language: p.language || p.lang || "english",
         script_type: p.script_type || p.scriptType || null,
         speaker_id: p.speaker_id || p.speakerId || p.speaker || null,
-        text: text,
+        text,
         emotion: p.emotion || null,
         style: p.style || null,
         intent: p.intent || null,
@@ -61,18 +56,38 @@ export async function uploadPhrases(req, res) {
         volume: p.volume || null,
         events: p.events ? (Array.isArray(p.events) ? p.events.join(", ") : JSON.stringify(p.events)) : null,
         instructions: p.instructions || p.instruction || p.notes || p.metadata || null,
-      };
+      });
+    }
 
-      if (existing) {
-        // Only update if it's still pending (don't overwrite already recorded)
-        if (existing.status === "pending") {
-          await Phrase.updateOne({ _id: existing._id }, { $set: doc });
-          updated++;
-        }
-      } else {
-        await Phrase.create({ phraseId: String(p.id), ...doc });
-        inserted++;
+    if (docs.length === 0) return res.json({ success: true, inserted: 0, updated: 0 });
+
+    // Single query to find all existing phrases
+    const phraseIds = docs.map(d => d.phraseId);
+    const existing = await Phrase.find({ phraseId: { $in: phraseIds } }).select("phraseId status").lean();
+    const existingMap = new Map(existing.map(e => [e.phraseId, e]));
+
+    const toInsert = [];
+    const updateOps = [];
+
+    for (const doc of docs) {
+      const ex = existingMap.get(doc.phraseId);
+      if (!ex) {
+        toInsert.push(doc);
+      } else if (ex.status === "pending") {
+        updateOps.push({ updateOne: { filter: { phraseId: doc.phraseId, status: "pending" }, update: { $set: doc } } });
       }
+    }
+
+    let inserted = 0;
+    let updated = 0;
+
+    if (toInsert.length > 0) {
+      const result = await Phrase.insertMany(toInsert, { ordered: false });
+      inserted = result.length;
+    }
+    if (updateOps.length > 0) {
+      const result = await Phrase.bulkWrite(updateOps, { ordered: false });
+      updated = result.modifiedCount;
     }
 
     res.json({ success: true, inserted, updated });
