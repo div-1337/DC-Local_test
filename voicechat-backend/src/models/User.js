@@ -12,7 +12,7 @@ const userSchema = new mongoose.Schema(
     isQA: { type: Boolean, default: false },
     qaLanguageCode: { type: String, lowercase: true, trim: true, default: null },
     qaLanguageCodes: [{ type: String, lowercase: true, trim: true }],
-    dailyCallLimit: { type: Number, default: 50, min: 0 },
+    dailyCallLimit: { type: Number, default: 3, min: 0 },
     overallCallLimit: { type: Number, default: -1 }, // -1 means unlimited
     dailyPhraseLimit: { type: Number, default: 1000, min: 0 },
     overallPhraseLimit: { type: Number, default: -1 }, // -1 means unlimited
@@ -66,6 +66,9 @@ const userSchema = new mongoose.Schema(
       },
     ],
     
+    // Speaker ID (e.g. spk_1, spk_2, ...)
+    speaker_id: { type: String, unique: true, sparse: true, default: null },
+
     // Reset Password
     resetPasswordToken: { type: String, default: null },
     resetPasswordExpires: { type: Date, default: null },

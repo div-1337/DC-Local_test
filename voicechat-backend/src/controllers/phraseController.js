@@ -3,10 +3,14 @@ import path from "path";
 import { Phrase } from "../models/Phrase.js";
 import { User } from "../models/User.js";
 import { Company } from "../models/Company.js";
+import { Project } from "../models/Project.js";
 import { GetObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { Upload } from "@aws-sdk/lib-storage";
 import { s3Client, BUCKET_NAME } from "../config/s3.js";
 import ffmpeg from "fluent-ffmpeg";
+import ffmpegInstaller from "@ffmpeg-installer/ffmpeg";
+
+ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 
 const PHRASE_RECORDINGS_DIR = path.join(process.cwd(), "recordings", "phrases");
 
@@ -20,7 +24,7 @@ if (!fs.existsSync(PHRASE_RECORDINGS_DIR)) {
  */
 export async function uploadPhrases(req, res) {
   try {
-    const { companyId, phrases } = req.body;
+    const { companyId, projectName, phrases } = req.body;
     if (!Array.isArray(phrases)) {
       return res.status(400).json({ error: "Phrases must be an array" });
     }
@@ -35,19 +39,35 @@ export async function uploadPhrases(req, res) {
       );
     }
 
-    // Build all docs first
-    const docs = [];
+    // Natively index new unique projects
+    if (projectName && projectName.trim()) {
+      const trimmedProject = projectName.trim();
+      await Project.findOneAndUpdate(
+        { name: trimmedProject },
+        { $setOnInsert: { name: trimmedProject, languageRates: [] } },
+        { upsert: true }
+      );
+    }
+
+    let inserted = 0;
+    let updated = 0;
+
     for (const p of phrases) {
+      // Flexibly map the phrase ID or auto-generate one
       const givenId = p.id || p.phraseId || p._id || p.phrase_id || `auto_${Date.now()}_${Math.random().toString(36).substring(2,7)}`;
+      
+      // Flexibly map the text content
       const text = p.text || p.sentence || p.content || p.phrase || p.transcript;
-      if (!text) continue;
-      docs.push({
-        phraseId: String(givenId),
-        companyId: companyId || null,
+      if (!text) continue; // We strictly need at least some text to be read
+
+      const existing = await Phrase.findOne({ phraseId: String(givenId) });
+      const doc = {
+        companyId: companyId ? companyId.trim() : null,
+        projectName: projectName ? projectName.trim() : null,
         language: p.language || p.lang || "english",
         script_type: p.script_type || p.scriptType || null,
         speaker_id: p.speaker_id || p.speakerId || p.speaker || null,
-        text,
+        text: text,
         emotion: p.emotion || null,
         style: p.style || null,
         intent: p.intent || null,
@@ -56,38 +76,18 @@ export async function uploadPhrases(req, res) {
         volume: p.volume || null,
         events: p.events ? (Array.isArray(p.events) ? p.events.join(", ") : JSON.stringify(p.events)) : null,
         instructions: p.instructions || p.instruction || p.notes || p.metadata || null,
-      });
-    }
+      };
 
-    if (docs.length === 0) return res.json({ success: true, inserted: 0, updated: 0 });
-
-    // Single query to find all existing phrases
-    const phraseIds = docs.map(d => d.phraseId);
-    const existing = await Phrase.find({ phraseId: { $in: phraseIds } }).select("phraseId status").lean();
-    const existingMap = new Map(existing.map(e => [e.phraseId, e]));
-
-    const toInsert = [];
-    const updateOps = [];
-
-    for (const doc of docs) {
-      const ex = existingMap.get(doc.phraseId);
-      if (!ex) {
-        toInsert.push(doc);
-      } else if (ex.status === "pending") {
-        updateOps.push({ updateOne: { filter: { phraseId: doc.phraseId, status: "pending" }, update: { $set: doc } } });
+      if (existing) {
+        // Only update if it's still pending (don't overwrite already recorded)
+        if (existing.status === "pending") {
+          await Phrase.updateOne({ _id: existing._id }, { $set: doc });
+          updated++;
+        }
+      } else {
+        await Phrase.create({ phraseId: String(givenId), ...doc });
+        inserted++;
       }
-    }
-
-    let inserted = 0;
-    let updated = 0;
-
-    if (toInsert.length > 0) {
-      const result = await Phrase.insertMany(toInsert, { ordered: false });
-      inserted = result.length;
-    }
-    if (updateOps.length > 0) {
-      const result = await Phrase.bulkWrite(updateOps, { ordered: false });
-      updated = result.modifiedCount;
     }
 
     res.json({ success: true, inserted, updated });
@@ -102,12 +102,15 @@ export async function uploadPhrases(req, res) {
  */
 export async function getAvailablePhrase(req, res) {
   try {
-    const { language } = req.query;
+    const { language, projectName } = req.query;
     const expiryTime = new Date(Date.now() - 5 * 60 * 1000); // 5 minutes ago
 
     const baseQuery = {};
     if (language) {
       baseQuery.language = { $regex: new RegExp(`^${language}$`, "i") };
+    }
+    if (projectName && projectName !== "Any") {
+      baseQuery.projectName = projectName;
     }
 
     // Check Limits
@@ -151,8 +154,15 @@ export async function getAvailablePhrase(req, res) {
       ]);
 
       for (const p of randomPhrases) {
+        const query = { _id: p._id, status: p.status };
+        // CRITICAL: Prevent lock stealing for expired locks. If it was locked, we must ensure
+        // no one else updated the lock timestamp since we read it from the aggregation pipeline.
+        if (p.status === "locked") {
+          query.lockedAt = p.lockedAt;
+        }
+
         phrase = await Phrase.findOneAndUpdate(
-          { _id: p._id, status: p.status }, // Ensure it hasn't changed
+          query,
           {
             $set: {
               status: "locked",

@@ -69,6 +69,7 @@ import adminRoutes from "./routes/admin.js";
 import topicsRoutes from "./routes/topics.js";
 import supportRoutes from "./routes/support.js";
 import phrasesRoutes from "./routes/phrases.js";
+import projectsRoutes from "./routes/projects.js";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 function parseMaxCallMs(value, fallbackMs) {
@@ -124,13 +125,21 @@ app.use(express.urlencoded({ limit: "50mb", extended: true }));
 app.use(cookieParser());
 app.use(
   cors({
-    origin: [
-      FRONTEND_ORIGIN,
-      "https://voclara.com",
-      "https://www.voclara.com",
-      "http://localhost:5173",
-      "http://127.0.0.1:5173"
-    ],
+    origin: function (origin, callback) {
+      const allowedOrigins = [
+        FRONTEND_ORIGIN,
+        "https://voclara.com",
+        "https://www.voclara.com",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173"
+      ];
+      // Allow if it's in the whitelist OR if it's a Netlify staging domain
+      if (!origin || allowedOrigins.includes(origin) || origin.endsWith(".netlify.app")) {
+        callback(null, true);
+      } else {
+        callback(new Error("Not allowed by CORS"));
+      }
+    },
     allowedHeaders: ["Content-Type", "Authorization", "Accept"],
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     credentials: true,
@@ -259,6 +268,7 @@ app.use("/api/admin", adminRoutes);
 app.use("/api/topics", topicsRoutes);
 app.use("/api/support", supportRoutes);
 app.use("/api/phrases", phrasesRoutes);
+app.use("/api/projects", projectsRoutes);
 
 // ─── HTTP + Socket.IO server ──────────────────────────────────────────────────
 const server = http.createServer(app);
